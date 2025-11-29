@@ -46,10 +46,7 @@ namespace bnch_swt {
 
 	struct xoshiro_256_base {
 		BNCH_SWT_HOST xoshiro_256_base() {
-			auto x	   = get_time_based_seed() >> 12ull;
-			auto x01   = x ^ x << 25ull;
-			auto x02   = x01 ^ x01 >> 27ull;
-			uint64_t s = x02 * 0x2545F4914F6CDD1Dull;
+			uint64_t s = get_time_based_seed();
 			for (uint64_t y = 0; y < 4; ++y) {
 				state[y] = splitmix64(s);
 			}
@@ -87,10 +84,16 @@ namespace bnch_swt {
 
 	template<typename value_type> struct xoshiro_256 : public xoshiro_256_base {
 		BNCH_SWT_HOST value_type operator()(value_type min, value_type max) {
-			if (min >= max)
+			if (min >= max) {
 				return min;
+			}
 
-			uint64_t range	   = static_cast<uint64_t>(max - min);
+			uint64_t range = static_cast<uint64_t>(max - min);
+
+			if (range == std::numeric_limits<uint64_t>::max()) {
+				return static_cast<value_type>(min + xoshiro_256_base::operator()());
+			}
+
 			uint64_t threshold = (std::numeric_limits<uint64_t>::max() / (range + 1)) * (range + 1);
 
 			uint64_t result;
@@ -145,19 +148,18 @@ namespace bnch_swt {
 	};
 
 	template<bnch_swt::internal::floating_point_t value_type> struct random_generator<value_type> {
-		BNCH_SWT_HOST static value_type generate_value(value_type min = std::numeric_limits<value_type>::lowest(), value_type max = std::numeric_limits<value_type>::max()) {
+		BNCH_SWT_HOST static value_type impl(value_type min = std::numeric_limits<value_type>::lowest(), value_type max = std::numeric_limits<value_type>::max()) {
 			static thread_local xoshiro_256<value_type> random_engine{};
 			return static_cast<value_type>(random_engine(min, max));
 		}
 	};
-
+	
 	template<bnch_swt::internal::bool_t value_type> struct random_generator<value_type> {
 		BNCH_SWT_HOST static value_type impl() {
-			static thread_local xoshiro_256<value_type> random_engine{};
-			return static_cast<value_type>(random_engine() & 1);
+			static thread_local xoshiro_256<uint64_t> random_engine{};
+			return static_cast<value_type>(random_engine(0, 1));
 		}
 	};
-
 
 	template<bnch_swt::internal::integer_t value_type>
 		requires(std::is_unsigned_v<value_type>)
@@ -173,8 +175,14 @@ namespace bnch_swt {
 	struct random_generator<value_type> {
 		BNCH_SWT_HOST static value_type impl(value_type min = std::numeric_limits<value_type>::min(), value_type max = std::numeric_limits<value_type>::max()) {
 			static thread_local xoshiro_256<value_type> random_engine{};
-			return static_cast<value_type>(random_engine(min, max));
+
+			using unsigned_type	 = std::make_unsigned_t<value_type>;
+			unsigned_type umin	 = static_cast<unsigned_type>(min);
+			unsigned_type umax	 = static_cast<unsigned_type>(max);
+			unsigned_type urange = umax - umin;
+
+			return static_cast<value_type>(random_engine(static_cast<value_type>(0), static_cast<value_type>(urange)) + min);
 		}
-	};
+	};	
 
 }

@@ -61,47 +61,101 @@ jobs:
     
     - name: Create Build Directory
       run: mkdir -p Build
-
     - name: Configure CMake (Ubuntu-Gcc)
       if: matrix.os == 'ubuntu-latest' && matrix.compiler == 'gcc'
       run: |
-        cmake -S . -B ./Build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/g++-14 -DBENCHMARKS=TRUE
+        cmake -S . -B ./Build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/g++-14 -DBENCHMARKS=TRUE -DPRINT_ASSEMBLY=TRUE
     
     - name: Configure CMake (Ubuntu-Clang)
       if: matrix.os == 'ubuntu-latest' && matrix.compiler == 'clang'
       run: |
-        cmake -S . -B ./Build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++-20 -DBENCHMARKS=TRUE
-
+        cmake -S . -B ./Build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++-20 -DBENCHMARKS=TRUE -DPRINT_ASSEMBLY=TRUE
     - name: Configure CMake
       if: matrix.os == 'macos-latest'
       run: |
-        cmake -S . -B ./Build -DCMAKE_BUILD_TYPE=Release -DBENCHMARKS=TRUE
-
+        cmake -S . -B ./Build -DCMAKE_BUILD_TYPE=Release -DBENCHMARKS=TRUE -DPRINT_ASSEMBLY=TRUE
     - name: Configure CMake
       if: matrix.os == 'windows-latest'
       run: |
-        cmake -S . -B ./Build -DCMAKE_BUILD_TYPE=Release -DBENCHMARKS=TRUE
-
+        cmake -S . -B ./Build -DCMAKE_BUILD_TYPE=Release -DBENCHMARKS=TRUE -DPRINT_ASSEMBLY=TRUE
     - name: Build the Test
       run: |
             cmake --build ./Build --config=Release
-
+    
+    - name: Find and Print Assembly Files (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        echo "=== Searching for assembly files ==="
+        find ./Build -name "*.asm" -type f
+        echo ""
+        echo "=== Assembly file details ==="
+        find ./Build -name "*.asm" -type f -exec sh -c 'echo "File: {}"; ls -lh "{}"; echo "Lines: $(wc -l < "{}")"; echo ""' \;
+        echo ""
+        echo "=== Printing COMPLETE assembly files ==="
+        find ./Build -name "*.asm" -type f -exec sh -c 'echo "========== {} =========="; cat "{}"; echo ""; echo "========== END OF {} =========="; echo ""' \;
+    
+    - name: Find and Print Assembly Files (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        echo "=== Searching for assembly files ==="
+        echo "Current directory:"
+        Get-Location
+        echo ""
+        echo "Build directory contents:"
+        Get-ChildItem -Path ./Build -Recurse | Select-Object FullName
+        echo ""
+        echo "Specifically checking ./Build/src/:"
+        if (Test-Path ./Build/src) {
+          Get-ChildItem -Path ./Build/src -File | Select-Object Name, Length
+        } else {
+          echo "./Build/src does not exist!"
+        }
+        echo ""
+        echo "Searching for .cod files recursively:"
+        $asmFiles = Get-ChildItem -Path ./Build -Recurse -Filter "*.cod" -File -ErrorAction SilentlyContinue
+    
+        if ($null -eq $asmFiles -or $asmFiles.Count -eq 0) {
+          echo "NO .ASM FILES FOUND!"
+          echo ""
+          echo "Checking if /Fa flag was applied - looking for compilation output:"
+          Get-ChildItem -Path ./Build/src -Recurse -File | Where-Object { $_.Extension -match '\.(obj|cod|cod)' } | Select-Object FullName
+        } else {
+          echo "Found $($asmFiles.Count) assembly file(s):"
+          $asmFiles | ForEach-Object { echo $_.FullName }
+      
+          echo ""
+          echo "=== Assembly file details ==="
+          $asmFiles | ForEach-Object {
+            echo "File: $($_.FullName)"
+            echo "Size: $($_.Length) bytes"
+            echo "Lines: $((Get-Content $_.FullName).Count)"
+            echo ""
+          }
+      
+          echo ""
+          echo "=== Printing COMPLETE assembly files ==="
+          $asmFiles | ForEach-Object {
+            echo "========== $($_.FullName) =========="
+            Get-Content $_.FullName
+            echo ""
+            echo "========== END OF $($_.FullName) =========="
+            echo ""
+          }
+        }
+        
     - name: Install the Test
       if: matrix.os != 'windows-latest'
       run: |
             sudo cmake --install ./Build --config=Release
-
     - name: Install the Test
       if: matrix.os == 'windows-latest'
       run: |
             cmake --install ./Build --config=Release
-
     - name: Run the Test
       if: matrix.os != 'windows-latest'
       run: |
             sudo chmod +x /usr/local/bin/benchmarksuite-main    
             sudo /usr/local/bin/benchmarksuite-main
-
     - name: Run the Test
       if: matrix.os == 'windows-latest'
       run: |
