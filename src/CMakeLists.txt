@@ -17,14 +17,61 @@
 #	FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 #	OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #	DEALINGS IN THE SOFTWARE.
+message("FOLDER: ${CMAKE_CURRENT_BINARY_DIR}")
 
 set(MAIN_SOURCE $<IF:$<BOOL:${BNCH_SWT_DEPLOY}>,main_deploy,main>${BNCH_SWT_MAIN_FILE_EXTENSION})
 
 add_executable(benchmarksuite-main ${MAIN_SOURCE})
 
+if (PRINT_ASSEMBLY)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        message(STATUS "Assembly printing enabled. Using Post-Build step to generate assembly file.")
+        
+        if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+            add_custom_command(
+                TARGET benchmarksuite-main POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:benchmarksuite-main>"
+                COMMAND ${CMAKE_COMMAND} -E echo "Assembly file location: $<TARGET_FILE_DIR:benchmarksuite-main>/benchmarksuite-main.asm"
+                COMMAND sh -c "otool -tV '$<TARGET_FILE:benchmarksuite-main>' > '$<TARGET_FILE_DIR:benchmarksuite-main>/benchmarksuite-main.asm'"
+                COMMENT "Generating final assembly for benchmarksuite-main"
+                VERBATIM
+            )
+        else()
+            add_custom_command(
+                TARGET benchmarksuite-main POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:benchmarksuite-main>"
+                COMMAND ${CMAKE_COMMAND} -E echo "Assembly file location: $<TARGET_FILE_DIR:benchmarksuite-main>/benchmarksuite-main.asm"
+                COMMAND sh -c "objdump -d '$<TARGET_FILE:benchmarksuite-main>' > '$<TARGET_FILE_DIR:benchmarksuite-main>/benchmarksuite-main.asm'"
+                COMMENT "Generating final assembly for benchmarksuite-main"
+                VERBATIM
+            )
+        endif()
+    elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        set(ASSEMBLY_OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/benchmarksuite-main.asm")
+        set(MSVC_ASM_FLAG /Fa${ASSEMBLY_OUTPUT_FILE})
+        target_compile_options(benchmarksuite-main PRIVATE "${MSVC_ASM_FLAG}")
+        message(STATUS "Assembly printing enabled. MSVC will generate assembly file: ${ASSEMBLY_OUTPUT_FILE}")
+    endif()
+endif()
+
+include(FetchContent)
+
+if (BNCH_SWT_CUDA)
+    set(GGML_CUDA TRUE)
+    FetchContent_Declare(
+        ggml
+        GIT_REPOSITORY https://github.com/ggerganov/llama.cpp
+        GIT_TAG master
+    )
+    set(GGML_CUDA ON CACHE BOOL "" FORCE)
+    set(CMAKE_CUDA_ARCHITECTURES "90" CACHE STRING "" FORCE)
+    FetchContent_MakeAvailable(ggml)
+endif()
+
 target_link_libraries(benchmarksuite-main
     PUBLIC
         benchmarksuite::benchmarksuite
+        $<$<TARGET_EXISTS:ggml>:ggml>
 )
 
 if(MSVC)

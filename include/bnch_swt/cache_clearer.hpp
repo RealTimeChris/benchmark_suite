@@ -38,7 +38,6 @@
 	#if defined(__i386__) || defined(__x86_64__)
 		#include <immintrin.h>
 	#endif
-
 #elif BNCH_SWT_PLATFORM_MAC
 	#include <libkern/OSCacheControl.h>
 	#include <sys/sysctl.h>
@@ -116,7 +115,15 @@ namespace bnch_swt::internal {
 		for (size_t i = 0; i < size; i += cache_line_size) {
 			__builtin_ia32_clflush(buffer + i);
 		}
-		#else
+		#elif BNCH_SWT_ARCH_ARM || BNCH_SWT_ARCH_ARM64
+		for (size_t i = 0; i < size; i += cache_line_size) {
+			#if BNCH_SWT_ARCH_ARM64
+			__asm__ __volatile__("dc civac, %0" : : "r"(buffer + i) : "memory");
+			#else
+			__builtin___clear_cache(buffer + i, buffer + i + cache_line_size);
+			#endif
+		}
+		__asm__ __volatile__("dsb sy" : : : "memory");
 		#endif
 
 		if (clear_instruction_cache) {
@@ -133,27 +140,28 @@ namespace bnch_swt::internal {
 	template<benchmark_types benchmark_type> class cache_clearer {
 		size_t cache_line_size{ get_cache_line_size() };
 		std::array<size_t, 3> cache_sizes{ { cpu_properties::l1_cache_size, cpu_properties::l2_cache_size, cpu_properties::l3_cache_size } };
-		size_t top_level_cache{ [&] {
-			if (cache_sizes[2] > cache_sizes[1]) {
-				return 2ull;
-			} else if (cache_sizes[1] > cache_sizes[0]) {
-				return 1ull;
-			} else {
-				return 0ull;
-			}
-		}() };
+
+		size_t max_cache_size{ std::max({ cache_sizes[0], cache_sizes[1], cache_sizes[2] }) };
+
 		std::vector<char> evict_buffer{ [&] {
 			std::vector<char> return_values{};
-			return_values.resize(top_level_cache < 3 ? (cache_sizes[top_level_cache] + cache_line_size) : 0);
+			if (max_cache_size > 0) {
+				return_values.resize(max_cache_size * 4 + cache_line_size);
+			}
 			return return_values;
 		}() };
 
 		BNCH_SWT_HOST void evict_cache(size_t cache_level) {
-			if (cache_level >= 1 && cache_level <= 3 && cache_sizes[cache_level - 1] > 0) {
-				for (size_t i = 0; i < cache_sizes[cache_level - 1] + cache_line_size; i += cache_line_size) {
-					if (i < evict_buffer.size()) {
-						evict_buffer[i] = static_cast<char>(i);
-					}
+			if (cache_level >= 1 && cache_level <= 3 && cache_sizes[cache_level - 1] > 0 && !evict_buffer.empty()) {
+				size_t target_size = cache_sizes[cache_level - 1] * 4;
+
+				const size_t stride = 4093;
+				volatile char sink	= 0;
+
+				for (size_t offset = 0; offset < target_size; offset += cache_line_size) {
+					size_t idx		  = (offset * stride) % evict_buffer.size();
+					evict_buffer[idx] = static_cast<char>(idx);
+					sink			  = sink + evict_buffer[idx];
 				}
 
 				flush_cache(evict_buffer.data(), evict_buffer.size(), cache_line_size);
