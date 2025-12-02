@@ -33,52 +33,63 @@
 
 namespace bnch_swt::internal {
 
+	struct cuda_timer {
+		BNCH_SWT_HOST cuda_timer() noexcept {
+			if (cudaEventCreate(&start_val) != cudaSuccess) {
+				return;
+			}
+			if (cudaEventCreate(&stop_val) != cudaSuccess) {
+				return;
+			}
+		}
+
+		BNCH_SWT_HOST void start() noexcept {
+			cudaEventRecord(start_val, 0);
+		}
+
+		BNCH_SWT_HOST void stop() noexcept {
+			cudaEventRecord(stop_val, 0);
+			cudaEventSynchronize(stop_val);
+		}
+
+		BNCH_SWT_HOST double get_time() noexcept {
+			float milliseconds = 0;
+			cudaEventElapsedTime(&milliseconds, start_val, stop_val);
+			return static_cast<double>(milliseconds);
+		}
+
+		BNCH_SWT_HOST ~cuda_timer() noexcept {
+			cudaEventDestroy(start_val);
+			cudaEventDestroy(stop_val);
+		}
+
+	  protected:
+		cudaEvent_t start_val{}, stop_val{};
+	};
+
 	template<typename function_type, typename... args_types> BNCH_SWT_GLOBAL static void profiling_wrapper(args_types... args) {
 		function_type::impl(args...);
 	}
+
 	template<typename event_count, uint64_t count> struct event_collector_type<event_count, benchmark_types::cuda, count> : public std::vector<event_count> {
-		std::vector<cudaEvent_t> start_events{};
-		std::vector<cudaEvent_t> stop_events{};
+		std::vector<cuda_timer> events{};
 		uint64_t current_index{};
-		bool working{};
-		uint64_t* d_metrics{};
-		BNCH_SWT_HOST event_collector_type() : std::vector<event_count>(count), working(true), current_index(0) {
-			start_events.resize(count);
-			stop_events.resize(count);
-			for (uint64_t i = 0; i < count; ++i) {
-				if (cudaEventCreate(&start_events[i]) != cudaSuccess || cudaEventCreate(&stop_events[i]) != cudaSuccess) {
-					working = false;
-					return;
-				}
-			}
-			if (cudaMalloc(&d_metrics, sizeof(uint64_t) * 16) != cudaSuccess) {
-				working = false;
-			}
+
+		BNCH_SWT_HOST event_collector_type() : std::vector<event_count>(count), current_index(0) {
+			events.resize(count);
 		}
+
 		BNCH_SWT_HOST ~event_collector_type() {
-			for (auto& evt: start_events) {
-				cudaEventDestroy(evt);
-			}
-			for (auto& evt: stop_events) {
-				cudaEventDestroy(evt);
-			}
-			if (d_metrics) {
-				cudaFree(d_metrics);
-			}
 		}
-		BNCH_SWT_HOST bool has_events() const {
-			return working;
-		}
+
 		template<typename function_type, typename... args_types> BNCH_SWT_HOST void run(dim3 grid, dim3 block, uint64_t shared_mem, uint64_t bytes_processed, args_types... args) {
-			if (!working || current_index >= count) {
+			if (current_index >= count) {
 				return;
 			}
-			cudaEventRecord(start_events[current_index]);
+			events[current_index].start();
 			profiling_wrapper<function_type><<<grid, block, shared_mem>>>(args...);
-			cudaEventRecord(stop_events[current_index]);
-			cudaDeviceSynchronize();
-			float ms = 0;
-			cudaEventElapsedTime(&ms, start_events[current_index], stop_events[current_index]);
+			events[current_index].stop();
+			double ms{ events[current_index].get_time() };
 			std::vector<event_count>::operator[](current_index).elapsed			  = std::chrono::duration<double, std::milli>(ms);
 			std::vector<event_count>::operator[](current_index).cuda_event_ms_val = ms;
 			std::vector<event_count>::operator[](current_index).bytes_processed_val.emplace(bytes_processed);
