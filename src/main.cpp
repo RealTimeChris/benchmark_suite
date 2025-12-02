@@ -1,13 +1,6 @@
 #include <bnch_swt/index.hpp>
 #include <random>
 
-constexpr char char_table[200] = { '0', '0', '0', '1', '0', '2', '0', '3', '0', '4', '0', '5', '0', '6', '0', '7', '0', '8', '0', '9', '1', '0', '1', '1', '1', '2', '1', '3', '1',
-	'4', '1', '5', '1', '6', '1', '7', '1', '8', '1', '9', '2', '0', '2', '1', '2', '2', '2', '3', '2', '4', '2', '5', '2', '6', '2', '7', '2', '8', '2', '9', '3', '0', '3', '1',
-	'3', '2', '3', '3', '3', '4', '3', '5', '3', '6', '3', '7', '3', '8', '3', '9', '4', '0', '4', '1', '4', '2', '4', '3', '4', '4', '4', '5', '4', '6', '4', '7', '4', '8', '4',
-	'9', '5', '0', '5', '1', '5', '2', '5', '3', '5', '4', '5', '5', '5', '6', '5', '7', '5', '8', '5', '9', '6', '0', '6', '1', '6', '2', '6', '3', '6', '4', '6', '5', '6', '6',
-	'6', '7', '6', '8', '6', '9', '7', '0', '7', '1', '7', '2', '7', '3', '7', '4', '7', '5', '7', '6', '7', '7', '7', '8', '7', '9', '8', '0', '8', '1', '8', '2', '8', '3', '8',
-	'4', '8', '5', '8', '6', '8', '7', '8', '8', '8', '9', '9', '0', '9', '1', '9', '2', '9', '3', '9', '4', '9', '5', '9', '6', '9', '7', '9', '8', '9', '9' };
-
 struct pair {
 	char val01{};
 	char val02{};
@@ -56,12 +49,24 @@ BNCH_SWT_HOST static uint64_t fastDigitCount(const uint64_t inputValue) {
 
 template<uint64_t divisor, uint64_t multiplier, uint32_t shift> struct multiply_and_shift {
 	template<typename value_type> BNCH_SWT_HOST static uint64_t impl(value_type value) noexcept {
-#if defined(__SIZEOF_INT128__)
-		const __int128_t product = static_cast<__int128_t>(value) * multiplier;
-		return static_cast<uint64_t >(product >> shift);
-#elif defined(_M_ARM64) && !defined(__MINGW32__)
+#if BNCH_SWT_COMPILER_CLANG
 		return value / divisor;
-#elif (defined(_WIN64) && !defined(__clang__))
+#else
+	#if defined(__SIZEOF_INT128__)
+		const __int128_t product = static_cast<__int128_t>(value) * multiplier;
+		return static_cast<uint64_t>(product >> shift);
+	#elif defined(_M_ARM64) && !defined(__MINGW32__)
+		value_type high_part{ __umulh(value, multiplier) };
+		value = value * multiplier;
+		if constexpr (shift < 64) {
+		} else {
+			return static_cast<uint64_t>(high_part >> (shift - 64ULL));
+		}
+		value_type values;
+		values = __umulh(value, multiplier);
+		value  = value * multiplier;
+		return values == 0;
+	#elif (defined(_WIN64) && !defined(__clang__))
 		uint64_t high_part;
 		const uint64_t low_part = _umul128(value, multiplier, &high_part);
 		if constexpr (shift < 64) {
@@ -69,15 +74,15 @@ template<uint64_t divisor, uint64_t multiplier, uint32_t shift> struct multiply_
 		} else {
 			return static_cast<uint64_t>(high_part >> (shift - 64ULL));
 		}
-#else
-		#error TESTING FOR ERROR!
+	#else
 		uint64_t high_part;
 		const uint64_t low_part = mul128Generic(value, multiplier, &high_part);
 		if constexpr (shift < 64) {
 			return static_cast<uint64_t>((low_part >> shift) | (high_part << (64ULL - shift)));
 		} else {
-			return static_cast<uint64_t >(high_part >> (shift - 64ULL));
+			return static_cast<uint64_t>(high_part >> (shift - 64ULL));
 		}
+	#endif
 #endif
 	}
 };
@@ -388,7 +393,7 @@ template<typename value_type> BNCH_SWT_HOST static char* toChars19(char* buf, co
 template<typename value_type> BNCH_SWT_HOST static char* toChars20(char* buf, const value_type value) noexcept {
 	const uint64_t high	  = multiply_and_shift<100000000ULL, 6189700196426901375ULL, 89>::impl(value);
 	const uint64_t low	  = value - high * 100000000ULL;
-	const uint64_t high12 = multiply_and_shift<100000000ULL, 6189700196426901375ULL, 89>::impl(value);
+	const uint64_t high12 = multiply_and_shift<100000000ULL, 6189700196426901375ULL, 89>::impl(high);
 	const uint64_t low12  = high - high12 * 100000000ULL;
 	uint64_t aa			  = (high12 * 5243u) >> 19ULL;
 	std::memcpy(buf, int_tables<void>::charTable02 + aa, 2ULL);
@@ -782,6 +787,13 @@ template<sig64_t value_type> BNCH_SWT_HOST static char* toCharsOld(char* buf, co
 	return toCharsOld(buf + (value < 0), static_cast<uint64_t>(value ^ (value >> 63ULL)) - (value >> 63ULL));
 }
 
+constexpr char char_table[200] = { '0', '0', '0', '1', '0', '2', '0', '3', '0', '4', '0', '5', '0', '6', '0', '7', '0', '8', '0', '9', '1', '0', '1', '1', '1', '2', '1', '3', '1',
+	'4', '1', '5', '1', '6', '1', '7', '1', '8', '1', '9', '2', '0', '2', '1', '2', '2', '2', '3', '2', '4', '2', '5', '2', '6', '2', '7', '2', '8', '2', '9', '3', '0', '3', '1',
+	'3', '2', '3', '3', '3', '4', '3', '5', '3', '6', '3', '7', '3', '8', '3', '9', '4', '0', '4', '1', '4', '2', '4', '3', '4', '4', '4', '5', '4', '6', '4', '7', '4', '8', '4',
+	'9', '5', '0', '5', '1', '5', '2', '5', '3', '5', '4', '5', '5', '5', '6', '5', '7', '5', '8', '5', '9', '6', '0', '6', '1', '6', '2', '6', '3', '6', '4', '6', '5', '6', '6',
+	'6', '7', '6', '8', '6', '9', '7', '0', '7', '1', '7', '2', '7', '3', '7', '4', '7', '5', '7', '6', '7', '7', '7', '8', '7', '9', '8', '0', '8', '1', '8', '2', '8', '3', '8',
+	'4', '8', '5', '8', '6', '8', '7', '8', '8', '8', '9', '9', '0', '9', '1', '9', '2', '9', '3', '9', '4', '9', '5', '9', '6', '9', '7', '9', '8', '9', '9' };
+
 template<class T>
 	requires std::same_as<std::remove_cvref_t<T>, uint32_t>
 auto* to_chars(auto* buf, T val) noexcept {
@@ -1006,7 +1018,7 @@ auto* to_chars(auto* buf, T x) noexcept {
 	return to_chars(buf + (x < 0), uint64_t(x ^ (x >> 63)) - (x >> 63));
 }
 
-uint64_t generateRandomIntegerByLength(size_t digitLength) {
+uint64_t generateRandomIntegerByLength(uint64_t digitLength) {
 	if (digitLength == 0) {
 		throw std::invalid_argument("Digit length must be greater than 0.");
 	}
@@ -1022,7 +1034,7 @@ uint64_t generateRandomIntegerByLength(size_t digitLength) {
 	std::uniform_int_distribution<uint16_t> dist01(1, 9);
 	std::uniform_int_distribution<uint16_t> dist02(0, 9);
 	newString[0] = static_cast<char>(dist01(gen)) + '0';
-	for (size_t x = 1; x < digitLength; ++x) {
+	for (uint64_t x = 1; x < digitLength; ++x) {
 		newString[x] = static_cast<char>(dist02(gen)) + '0';
 	}
 	auto endIter = newString.data() + newString.size();
@@ -1030,14 +1042,14 @@ uint64_t generateRandomIntegerByLength(size_t digitLength) {
 	return newValue;
 }
 
-template<typename value_type> std::vector<value_type> generateRandomIntegers(size_t count, size_t maxLength = 0, bool generateOnlyGivenLength = false) {
+template<typename value_type> std::vector<value_type> generateRandomIntegers(uint64_t count, uint64_t maxLength = 0, bool generateOnlyGivenLength = false) {
 	std::random_device rd;
 	std::mt19937_64 gen(rd());
-	size_t maxLengthNew{ maxLength == 0 ? 20 : maxLength };
+	uint64_t maxLengthNew{ maxLength == 0 ? 20 : maxLength };
 	std::uniform_int_distribution<value_type> lengthGen(1, maxLengthNew);
 
 	std::vector<value_type> randomNumbers;
-	for (size_t value = 0; value < count; ++value) {
+	for (uint64_t value = 0; value < count; ++value) {
 		uint64_t newValue{};
 		if (generateOnlyGivenLength) {
 			newValue = generateRandomIntegerByLength(maxLengthNew);
@@ -1050,96 +1062,121 @@ template<typename value_type> std::vector<value_type> generateRandomIntegers(siz
 	return randomNumbers;
 }
 
-static constexpr auto max_iterations{ 40 };
+static constexpr auto max_iterations{ 20 };
 static constexpr auto measured_iterations{ max_iterations / 5 };
 
 struct benchmark_glz_to_chars {
-	BNCH_SWT_HOST static uint64_t impl(std::vector<std::string>& resultsTest, const std::vector<uint64_t>& randomIntegers, size_t count) {
+	BNCH_SWT_HOST static uint64_t impl(std::vector<std::vector<std::string>>& resultsTest, const std::vector<std::vector<uint64_t>>& randomIntegers, uint64_t count,
+		uint64_t current_index) {
 		uint64_t currentCount{};
-		for (size_t x = 0; x < count; ++x) {
-			to_chars(resultsTest[x].data(), randomIntegers[x]);
-			currentCount += resultsTest[x].size();
+		for (uint64_t x = 0; x < count; ++x) {
+			to_chars(resultsTest[current_index][x].data(), randomIntegers[current_index][x]);
+			currentCount += resultsTest[current_index][x].size();
 		}
 		return currentCount;
 	}
 };
 
 struct benchmark_jsonifier_to_chars {
-	BNCH_SWT_HOST static uint64_t impl(std::vector<std::string>& resultsTest, const std::vector<uint64_t>& randomIntegers, size_t count) {
+	BNCH_SWT_HOST static uint64_t impl(std::vector<std::vector<std::string>>& resultsTest, const std::vector<std::vector<uint64_t>>& randomIntegers, uint64_t count,
+		uint64_t current_index) {
 		uint64_t currentCount{};
-		for (size_t x = 0; x < count; ++x) {
-			toChars(resultsTest[x].data(), static_cast<uint64_t>(randomIntegers[x]));
-			currentCount += resultsTest[x].size();
+		for (uint64_t x = 0; x < count; ++x) {
+			toChars(resultsTest[current_index][x].data(), static_cast<uint64_t>(randomIntegers[current_index][x]));
+			currentCount += resultsTest[current_index][x].size();
+		}
+		return currentCount;
+	}
+};
+
+struct benchmark_std_to_chars {
+	BNCH_SWT_HOST static uint64_t impl(std::vector<std::vector<std::string>>& resultsTest, const std::vector<std::vector<uint64_t>>& randomIntegers, uint64_t count, uint64_t current_index) {
+		uint64_t currentCount{};
+		for (uint64_t x = 0; x < count; ++x) {
+			std::to_chars(resultsTest[current_index][x].data(), resultsTest[current_index][x].data() + resultsTest[current_index][x].size(),
+				static_cast<uint64_t>(randomIntegers[current_index][x]));
+			currentCount += resultsTest[current_index][x].size();
 		}
 		return currentCount;
 	}
 };
 
 struct benchmark_jsonifier_to_chars_old {
-	BNCH_SWT_HOST static uint64_t impl(std::vector<std::string>& resultsTest, const std::vector<uint64_t>& randomIntegers, size_t count) {
+	BNCH_SWT_HOST static uint64_t impl(std::vector<std::vector<std::string>>& resultsTest, const std::vector<std::vector<uint64_t>>& randomIntegers, uint64_t count,
+		uint64_t current_index) {
 		uint64_t currentCount{};
-		for (size_t x = 0; x < count; ++x) {
-			toCharsOld(resultsTest[x].data(), static_cast<uint64_t>(randomIntegers[x]));
-			currentCount += resultsTest[x].size();
+		for (uint64_t x = 0; x < count; ++x) {
+			toCharsOld(resultsTest[current_index][x].data(), static_cast<uint64_t>(randomIntegers[current_index][x]));
+			currentCount += resultsTest[current_index][x].size();
 		}
 		return currentCount;
 	}
 };
 
 template<bnch_swt::string_literal stage_name, typename benchmark_type, bnch_swt::string_literal benchmark_name>
-BNCH_SWT_HOST void run_and_validate(auto& resultsTest, const auto& resultsReal, const auto& randomIntegers, size_t count) {
-	using benchmark = bnch_swt::benchmark_stage<stage_name, max_iterations, measured_iterations>;
+BNCH_SWT_HOST void run_and_validate(auto& resultsTest, const auto& resultsReal, const auto& randomIntegers, uint64_t count, uint64_t& current_index) {
+	using benchmark = bnch_swt::benchmark_stage<stage_name, max_iterations, measured_iterations, bnch_swt::benchmark_types::cpu, true>;
 
-	benchmark::template run_benchmark<benchmark_name, benchmark_type>(resultsTest, randomIntegers, count);
+	benchmark::template run_benchmark<benchmark_name, benchmark_type>(resultsTest, randomIntegers, count, current_index);
 
-	for (size_t x = 0; x < max_iterations; ++x) {
-		for (size_t y = 0; y < count; ++y) {
-			if (resultsReal[y] != resultsTest[y]) {
-				std::cout << benchmark_name.operator std::string_view() << " failed to serialize an integer of value: " << resultsReal[y]
-						  << ", instead it serialized: " << resultsTest[y] << std::endl;
-			}
+	for (uint64_t y = 0; y < count; ++y) {
+		if (resultsReal[current_index][y] != resultsTest[current_index][y]) {
+			std::cout << benchmark_name.operator std::string_view() << " failed to serialize an integer of value: " << resultsReal[current_index][y]
+					  << ", instead it serialized: " << resultsTest[current_index][y] << std::endl;
 		}
 	}
 }
 
-template<size_t count, size_t length = 0, bool generateOnlyGivenLength = false, bnch_swt::string_literal name> inline void testFunction64() {
-	std::vector<uint64_t> randomIntegers{};
-	randomIntegers = generateRandomIntegers<uint64_t>(count, length, generateOnlyGivenLength);
-	std::vector<std::string> resultsReal{};
-	std::vector<std::string> resultsTest{};
-	resultsTest.resize(count);
-	resultsReal.resize(count);
-	for (size_t y = 0; y < count; ++y) {
-		resultsReal[y] = std::to_string(randomIntegers[y]);
-		resultsTest[y].resize(resultsReal[y].size());
+template<uint64_t count, uint64_t length = 0, bool generateOnlyGivenLength = false, bnch_swt::string_literal name> inline void testFunction64() {
+	std::vector<std::vector<uint64_t>> randomIntegers{};
+	randomIntegers.resize(max_iterations);
+	for (uint64_t x = 0; x < max_iterations; ++x) {
+		randomIntegers[x] = generateRandomIntegers<uint64_t>(count, length, generateOnlyGivenLength);
 	}
-	size_t currentIndex{};
-	run_and_validate<name, benchmark_glz_to_chars, "glz::to_chars">(resultsTest, resultsReal, randomIntegers, count);
-	run_and_validate<name, benchmark_jsonifier_to_chars_old, "jsonifier::internal::toCharsOld">(resultsTest, resultsReal, randomIntegers, count);
-	run_and_validate<name, benchmark_jsonifier_to_chars, "jsonifier::internal::toChars">(resultsTest, resultsReal, randomIntegers, count);
-	bnch_swt::benchmark_stage<name, max_iterations, measured_iterations>::print_results(true, true);
+	std::vector<std::vector<std::string>> resultsReal{};	
+	std::vector<std::vector<std::string>> resultsTest{};
+	resultsReal.resize(max_iterations);
+	resultsTest.resize(max_iterations);
+	for (uint64_t x = 0; x < max_iterations; ++x) {
+		resultsTest[x].resize(count);
+		resultsReal[x].resize(count);
+
+		for (uint64_t y = 0; y < count; ++y) {
+			resultsReal[x][y] = std::to_string(randomIntegers[x][y]);
+			resultsTest[x][y].resize(resultsReal[x][y].size());
+		}
+	}
+	uint64_t currentIndex{};
+	run_and_validate<name, benchmark_glz_to_chars, "glz::to_chars">(resultsTest, resultsReal, randomIntegers, count, currentIndex);
+	currentIndex = 0;
+	run_and_validate<name, benchmark_std_to_chars, "std::to_chars">(resultsTest, resultsReal, randomIntegers, count, currentIndex);
+	currentIndex = 0;
+	run_and_validate<name, benchmark_jsonifier_to_chars, "jsonifier::internal::toChars">(resultsTest, resultsReal, randomIntegers, count, currentIndex);
+	currentIndex = 0;
+	run_and_validate<name, benchmark_jsonifier_to_chars_old, "jsonifier::internal::toCharsOld">(resultsTest, resultsReal, randomIntegers, count, currentIndex);
+	bnch_swt::benchmark_stage<name, max_iterations, measured_iterations, bnch_swt::benchmark_types::cpu, true>::print_results(true, true);
 }
 
 int main() {
-	testFunction64<1000000, 1, true, "uint64-test-1-100">();
-	testFunction64<1000000, 2, true, "uint64-test-2-100">();
-	testFunction64<1000000, 3, true, "uint64-test-3-100">();
-	testFunction64<1000000, 4, true, "uint64-test-4-100">();
-	testFunction64<1000000, 5, true, "uint64-test-5-100">();
-	testFunction64<1000000, 6, true, "uint64-test-6-100">();
-	testFunction64<1000000, 7, true, "uint64-test-7-100">();
-	testFunction64<1000000, 8, true, "uint64-test-8-100">();
-	testFunction64<1000000, 9, true, "uint64-test-9-100">();
-	testFunction64<1000000, 10, true, "uint64-test-10-100">();
-	testFunction64<1000000, 11, true, "uint64-test-11-100">();
-	testFunction64<1000000, 12, true, "uint64-test-12-100">();
-	testFunction64<1000000, 13, true, "uint64-test-13-100">();
-	testFunction64<1000000, 14, true, "uint64-test-14-100">();
-	testFunction64<1000000, 15, true, "uint64-test-15-100">();
-	testFunction64<1000000, 16, true, "uint64-test-16-100">();
-	testFunction64<1000000, 17, true, "uint64-test-17-100">();
-	testFunction64<1000000, 18, true, "uint64-test-18-100">();
-	testFunction64<1000000, 19, true, "uint64-test-19-100">();
-	testFunction64<1000000, 20, true, "uint64-test-20-100">();
+	testFunction64<1000, 1, true, "uint64-test-1-100">();
+	testFunction64<1000, 2, true, "uint64-test-2-100">();
+	testFunction64<1000, 3, true, "uint64-test-3-100">();
+	testFunction64<1000, 4, true, "uint64-test-4-100">();
+	testFunction64<1000, 5, true, "uint64-test-5-100">();
+	testFunction64<1000, 6, true, "uint64-test-6-100">();
+	testFunction64<1000, 7, true, "uint64-test-7-100">();
+	testFunction64<1000, 8, true, "uint64-test-8-100">();
+	testFunction64<1000, 9, true, "uint64-test-9-100">();
+	testFunction64<1000, 10, true, "uint64-test-10-100">();
+	testFunction64<1000, 11, true, "uint64-test-11-100">();
+	testFunction64<1000, 12, true, "uint64-test-12-100">();
+	testFunction64<1000, 13, true, "uint64-test-13-100">();
+	testFunction64<1000, 14, true, "uint64-test-14-100">();
+	testFunction64<1000, 15, true, "uint64-test-15-100">();
+	testFunction64<1000, 16, true, "uint64-test-16-100">();
+	testFunction64<1000, 17, true, "uint64-test-17-100">();
+	testFunction64<1000, 18, true, "uint64-test-18-100">();
+	testFunction64<1000, 19, true, "uint64-test-19-100">();
+	testFunction64<1000, 20, true, "uint64-test-20-100">();
 	return 0;
 }
