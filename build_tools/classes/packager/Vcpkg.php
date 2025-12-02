@@ -264,7 +264,7 @@ vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/License.md")
         }
 
         system('cp -v -R /usr/local/share/vcpkg/ports/rtc-benchmarksuite/vcpkg.json ./vcpkg/ports/rtc-benchmarksuite/vcpkg.json');
-        system('cp -v -R /usr/local/share/vcpkg/versions/b-/rtc-benchmarksuite.json ./vcpkg/versions/b-/rtc-benchmarksuite.json');
+        system('cp -v -R /usr/local/share/vcpkg/versions/b-/rtc-rtc-benchmarksuite.json ./vcpkg/versions/b-/rtc-rtc-benchmarksuite.json');
 
         echo GREEN . "Commit and push changes to main branch\n" . WHITE;
         $this->git('add .');
