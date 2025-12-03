@@ -49,24 +49,18 @@ BNCH_SWT_HOST static uint64_t fastDigitCount(const uint64_t inputValue) {
 
 template<uint64_t divisor, uint64_t multiplier, uint32_t shift> struct multiply_and_shift {
 	template<typename value_type> BNCH_SWT_HOST static uint64_t impl(value_type value) noexcept {
-#if BNCH_SWT_COMPILER_CLANG
-		return value / divisor;
-#else
-	#if defined(__SIZEOF_INT128__)
+#if defined(__SIZEOF_INT128__)
 		const __int128_t product = static_cast<__int128_t>(value) * multiplier;
 		return static_cast<uint64_t>(product >> shift);
-	#elif defined(_M_ARM64) && !defined(__MINGW32__)
+#elif defined(_M_ARM64) && !defined(__MINGW32__)
 		value_type high_part{ __umulh(value, multiplier) };
 		value = value * multiplier;
 		if constexpr (shift < 64) {
+			return static_cast<uint64_t>((value >> shift) | (high_part << (64ULL - shift)));
 		} else {
 			return static_cast<uint64_t>(high_part >> (shift - 64ULL));
 		}
-		value_type values;
-		values = __umulh(value, multiplier);
-		value  = value * multiplier;
-		return values == 0;
-	#elif (defined(_WIN64) && !defined(__clang__))
+#elif (defined(_WIN64) && !defined(__clang__))
 		uint64_t high_part;
 		const uint64_t low_part = _umul128(value, multiplier, &high_part);
 		if constexpr (shift < 64) {
@@ -74,7 +68,7 @@ template<uint64_t divisor, uint64_t multiplier, uint32_t shift> struct multiply_
 		} else {
 			return static_cast<uint64_t>(high_part >> (shift - 64ULL));
 		}
-	#else
+#else
 		uint64_t high_part;
 		const uint64_t low_part = mul128Generic(value, multiplier, &high_part);
 		if constexpr (shift < 64) {
@@ -82,7 +76,6 @@ template<uint64_t divisor, uint64_t multiplier, uint32_t shift> struct multiply_
 		} else {
 			return static_cast<uint64_t>(high_part >> (shift - 64ULL));
 		}
-	#endif
 #endif
 	}
 };
@@ -1062,8 +1055,8 @@ template<typename value_type> std::vector<value_type> generateRandomIntegers(uin
 	return randomNumbers;
 }
 
-static constexpr auto max_iterations{ 20 };
-static constexpr auto measured_iterations{ max_iterations / 5 };
+static constexpr auto max_iterations{ 100 };
+static constexpr auto measured_iterations{ max_iterations / 10 };
 
 struct benchmark_glz_to_chars {
 	BNCH_SWT_HOST static uint64_t impl(std::vector<std::vector<std::string>>& resultsTest, const std::vector<std::vector<uint64_t>>& randomIntegers, uint64_t count,
@@ -1090,7 +1083,8 @@ struct benchmark_jsonifier_to_chars {
 };
 
 struct benchmark_std_to_chars {
-	BNCH_SWT_HOST static uint64_t impl(std::vector<std::vector<std::string>>& resultsTest, const std::vector<std::vector<uint64_t>>& randomIntegers, uint64_t count, uint64_t current_index) {
+	BNCH_SWT_HOST static uint64_t impl(std::vector<std::vector<std::string>>& resultsTest, const std::vector<std::vector<uint64_t>>& randomIntegers, uint64_t count,
+		uint64_t current_index) {
 		uint64_t currentCount{};
 		for (uint64_t x = 0; x < count; ++x) {
 			std::to_chars(resultsTest[current_index][x].data(), resultsTest[current_index][x].data() + resultsTest[current_index][x].size(),
@@ -1133,7 +1127,7 @@ template<uint64_t count, uint64_t length = 0, bool generateOnlyGivenLength = fal
 	for (uint64_t x = 0; x < max_iterations; ++x) {
 		randomIntegers[x] = generateRandomIntegers<uint64_t>(count, length, generateOnlyGivenLength);
 	}
-	std::vector<std::vector<std::string>> resultsReal{};	
+	std::vector<std::vector<std::string>> resultsReal{};
 	std::vector<std::vector<std::string>> resultsTest{};
 	resultsReal.resize(max_iterations);
 	resultsTest.resize(max_iterations);
