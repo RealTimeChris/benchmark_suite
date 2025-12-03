@@ -49,10 +49,13 @@ BNCH_SWT_HOST static uint64_t fastDigitCount(const uint64_t inputValue) {
 
 template<uint64_t divisor, uint64_t multiplier, uint32_t shift> struct multiply_and_shift {
 	template<typename value_type> BNCH_SWT_HOST static uint64_t impl(value_type value) noexcept {
-#if defined(__SIZEOF_INT128__)
+#if BNCH_SWT_COMPILER_CLANG && defined(_M_ARM64) && !defined(__MINGW32__)
+		return value / divisor;
+#else
+	#if defined(__SIZEOF_INT128__)
 		const __int128_t product = static_cast<__int128_t>(value) * multiplier;
 		return static_cast<uint64_t>(product >> shift);
-#elif defined(_M_ARM64) && !defined(__MINGW32__)
+	#elif defined(_M_ARM64) && !defined(__MINGW32__)
 		value_type high_part{ __umulh(value, multiplier) };
 		value = value * multiplier;
 		if constexpr (shift < 64) {
@@ -60,7 +63,7 @@ template<uint64_t divisor, uint64_t multiplier, uint32_t shift> struct multiply_
 		} else {
 			return static_cast<uint64_t>(high_part >> (shift - 64ULL));
 		}
-#elif (defined(_WIN64) && !defined(__clang__))
+	#elif (defined(_WIN64) && !defined(__clang__))
 		uint64_t high_part;
 		const uint64_t low_part = _umul128(value, multiplier, &high_part);
 		if constexpr (shift < 64) {
@@ -68,7 +71,7 @@ template<uint64_t divisor, uint64_t multiplier, uint32_t shift> struct multiply_
 		} else {
 			return static_cast<uint64_t>(high_part >> (shift - 64ULL));
 		}
-#else
+	#else
 		uint64_t high_part;
 		const uint64_t low_part = mul128Generic(value, multiplier, &high_part);
 		if constexpr (shift < 64) {
@@ -76,6 +79,7 @@ template<uint64_t divisor, uint64_t multiplier, uint32_t shift> struct multiply_
 		} else {
 			return static_cast<uint64_t>(high_part >> (shift - 64ULL));
 		}
+	#endif
 #endif
 	}
 };
@@ -1109,7 +1113,7 @@ struct benchmark_jsonifier_to_chars_old {
 
 template<bnch_swt::string_literal stage_name, typename benchmark_type, bnch_swt::string_literal benchmark_name>
 BNCH_SWT_HOST void run_and_validate(auto& resultsTest, const auto& resultsReal, const auto& randomIntegers, uint64_t count, uint64_t& current_index) {
-	using benchmark = bnch_swt::benchmark_stage<stage_name, max_iterations, measured_iterations, bnch_swt::benchmark_types::cpu, true>;
+	using benchmark = bnch_swt::benchmark_stage<stage_name, max_iterations, measured_iterations, bnch_swt::benchmark_types::cpu>;
 
 	benchmark::template run_benchmark<benchmark_name, benchmark_type>(resultsTest, randomIntegers, count, current_index);
 
@@ -1148,7 +1152,7 @@ template<uint64_t count, uint64_t length = 0, bool generateOnlyGivenLength = fal
 	run_and_validate<name, benchmark_jsonifier_to_chars, "jsonifier::internal::toChars">(resultsTest, resultsReal, randomIntegers, count, currentIndex);
 	currentIndex = 0;
 	run_and_validate<name, benchmark_jsonifier_to_chars_old, "jsonifier::internal::toCharsOld">(resultsTest, resultsReal, randomIntegers, count, currentIndex);
-	bnch_swt::benchmark_stage<name, max_iterations, measured_iterations, bnch_swt::benchmark_types::cpu, true>::print_results(true, true);
+	bnch_swt::benchmark_stage<name, max_iterations, measured_iterations, bnch_swt::benchmark_types::cpu>::print_results(true, true);
 }
 
 int main() {
