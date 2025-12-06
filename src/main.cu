@@ -374,7 +374,7 @@ struct cuda_buffer {
 	BNCH_SWT_HOST cuda_buffer() noexcept {
 	}
 	BNCH_SWT_HOST cuda_buffer& operator=(const cuda_buffer&) noexcept = delete;
-	BNCH_SWT_HOST cuda_buffer(const cuda_buffer&) noexcept			 = delete;
+	BNCH_SWT_HOST cuda_buffer(const cuda_buffer&) noexcept			  = delete;
 
 	BNCH_SWT_HOST cuda_buffer& operator=(cuda_buffer&& other) noexcept {
 		if (this != &other) {
@@ -445,8 +445,7 @@ template<uint64_t shift, integral_types value_type> BNCH_SWT_HOST_DEVICE constex
 }
 
 template<uint64_t shift, integral_types value_type> BNCH_SWT_HOST_DEVICE constexpr value_type& operator<<=(value_type& arg, std::integral_constant<uint64_t, shift>) noexcept {
-	constexpr uint64_t shift_amount{ shift };
-	return arg = arg << shift_amount;
+	return arg = arg << std::integral_constant<uint64_t, shift>{};
 }
 
 template<uint64_t shift, integral_types value_type> BNCH_SWT_HOST_DEVICE constexpr value_type operator>>(const value_type arg, std::integral_constant<uint64_t, shift>) noexcept {
@@ -455,13 +454,33 @@ template<uint64_t shift, integral_types value_type> BNCH_SWT_HOST_DEVICE constex
 }
 
 template<uint64_t shift, integral_types value_type> BNCH_SWT_HOST_DEVICE constexpr value_type& operator>>=(value_type& arg, std::integral_constant<uint64_t, shift>) noexcept {
-	constexpr uint64_t shift_amount{ shift };
-	return arg = arg >> shift_amount;
+	return arg = arg >> std::integral_constant<uint64_t, shift>{};
 }
 
-template<uint64_t shift> BNCH_SWT_HOST_DEVICE constexpr std::byte operator<<(const std::byte _Arg, std::integral_constant<uint64_t, shift>) noexcept {
+template<uint64_t shift>
+	requires(shift < 8)
+BNCH_SWT_HOST_DEVICE constexpr std::byte operator<<(const std::byte arg, std::integral_constant<uint64_t, shift>) noexcept {
 	constexpr uint64_t shift_amount{ shift };
-	return static_cast<std::byte>(static_cast<unsigned char>(static_cast<unsigned int>(_Arg) << shift_amount));
+	return static_cast<std::byte>(static_cast<unsigned char>(static_cast<unsigned int>(arg) << shift_amount));
+}
+
+template<uint64_t shift>
+	requires(shift < 8)
+BNCH_SWT_HOST_DEVICE constexpr std::byte& operator<<=(std::byte& arg, std::integral_constant<uint64_t, shift>) noexcept {
+	return arg = arg << std::integral_constant<uint64_t, shift>{};
+}
+
+template<uint64_t shift>
+	requires(shift < 8)
+BNCH_SWT_HOST_DEVICE constexpr std::byte operator>>(const std::byte arg, std::integral_constant<uint64_t, shift>) noexcept {
+	constexpr uint64_t shift_amount{ shift };
+	return static_cast<std::byte>(static_cast<unsigned char>(static_cast<unsigned int>(arg) >> shift_amount));
+}
+
+template<uint64_t shift>
+	requires(shift < 8)
+BNCH_SWT_HOST_DEVICE constexpr std::byte& operator>>=(std::byte& arg, std::integral_constant<uint64_t, shift>) noexcept {
+	return arg = arg >> std::integral_constant<uint64_t, shift>{};
 }
 
 struct cpu_buffer {
@@ -471,7 +490,7 @@ struct cpu_buffer {
 	BNCH_SWT_HOST cpu_buffer() noexcept {
 	}
 	BNCH_SWT_HOST cpu_buffer& operator=(const cpu_buffer&) noexcept = delete;
-	BNCH_SWT_HOST cpu_buffer(const cpu_buffer&) noexcept			 = delete;
+	BNCH_SWT_HOST cpu_buffer(const cpu_buffer&) noexcept			= delete;
 
 	BNCH_SWT_HOST cpu_buffer& operator=(cpu_buffer&& other) noexcept {
 		if (this != &other) {
@@ -595,8 +614,12 @@ constexpr uint64_t byte_count{ [] {
 
 template<typename value_type, uint64_t value_count, value_type min = std::numeric_limits<value_type>::min(), value_type max = std::numeric_limits<value_type>::max()>
 BNCH_SWT_HOST void generate_values(void* cuda_memory) {
-	std::vector<value_type> return_values{};
-	for (uint64_t x = 0; x < value_count; ++x) {
+	static std::vector<value_type> return_values{};
+	auto size = return_values.size();
+	for (uint64_t x = 0; x < size; ++x) {
+		return_values[x] = bnch_swt::random_generator<value_type>::impl(min, max);
+	}
+	for (uint64_t x = size; x < value_count; ++x) {
 		return_values.emplace_back(bnch_swt::random_generator<value_type>::impl(min, max));
 	}
 	if (auto result = cudaMemcpy(cuda_memory, return_values.data(), return_values.size() * sizeof(value_type), cudaMemcpyKind::cudaMemcpyHostToDevice); result) {
@@ -647,8 +670,8 @@ template<typename value_type> BNCH_SWT_HOST void generate_cuda_data(cuda_buffer&
 	generate_values<value_type, cuda_tensors_val.output_weight.element_count, -0.1f, 0.1f>(static_cast<std::byte*>(buffer.data()) + current_offset);
 }
 
-static constexpr uint64_t total_iterations{ 100 };
-static constexpr uint64_t measured_iterations{ 10 };
+static constexpr uint64_t total_iteration_count{ 4 };
+static constexpr uint64_t measured_iterations{ 2 };
 
 cuda_buffer buffer{ [] {
 	cuda_buffer return_values{};
@@ -670,15 +693,14 @@ struct benchmark_ggml {
 
 struct benchmark_nihilus {
 	BNCH_SWT_DEVICE static void impl(cuda_tensors cuda_tensors_val_new) {
-
 	}
 };
 
 int main() {
 	uint64_t test_byte{};
 	test_byte << std::integral_constant<uint64_t, 32>{};
-	using benchmark = bnch_swt::benchmark_stage<"kernel-gegen-kernel", total_iterations, measured_iterations, bnch_swt::benchmark_types::cuda>;
-	using test_benchmark = bnch_swt::benchmark_stage<"kernel-gegen-kernel-test", 1, 1, bnch_swt::benchmark_types::cpu>;
+	using benchmark		 = bnch_swt::benchmark_stage<"kernel-gegen-kernel", total_iteration_count, measured_iterations, bnch_swt::benchmark_types::cuda>;
+	using test_benchmark = bnch_swt::benchmark_stage<"kernel-gegen-kernel-test", total_iteration_count, measured_iterations, bnch_swt::benchmark_types::cpu>;
 	generate_cuda_data<float>(buffer);
 	dim3 grid{};
 	dim3 block{};

@@ -17,6 +17,7 @@
 #	FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 #	OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #	DEALINGS IN THE SOFTWARE.
+message("FOLDER: ${CMAKE_CURRENT_BINARY_DIR}")
 
 set(MAIN_SOURCE $<IF:$<BOOL:${BNCH_SWT_DEPLOY}>,main_deploy,main>${BNCH_SWT_MAIN_FILE_EXTENSION})
 
@@ -46,29 +47,31 @@ if (PRINT_ASSEMBLY)
             )
         endif()
     elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        set(ASM_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/asm_output")
-        file(MAKE_DIRECTORY ${ASM_OUTPUT_DIR})
-
-        target_compile_options(benchmarksuite-main PRIVATE 
-            "/FAcs"
-            "/Fa${ASM_OUTPUT_DIR}/"
-        )
-    
-        message(STATUS "Assembly printing enabled for MSVC. Assembly files will be generated in: ${ASM_OUTPUT_DIR}")
-
-        add_custom_command(
-            TARGET benchmarksuite-main POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Copying MSVC assembly files from ${ASM_OUTPUT_DIR}..."
-            COMMAND ${CMAKE_COMMAND} -E copy_directory "${ASM_OUTPUT_DIR}" "$<TARGET_FILE_DIR:benchmarksuite-main>"
-            COMMAND ${CMAKE_COMMAND} -E echo "Assembly files location: $<TARGET_FILE_DIR:benchmarksuite-main>"
-            COMMENT "Copying MSVC assembly output"
-        )
+        set(ASSEMBLY_OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/benchmarksuite-main.asm")
+        set(MSVC_ASM_FLAG /Fa${ASSEMBLY_OUTPUT_FILE})
+        target_compile_options(benchmarksuite-main PRIVATE "${MSVC_ASM_FLAG}")
+        message(STATUS "Assembly printing enabled. MSVC will generate assembly file: ${ASSEMBLY_OUTPUT_FILE}")
     endif()
+endif()
+
+include(FetchContent)
+
+if (BNCH_SWT_CUDA)
+    set(GGML_CUDA TRUE)
+    FetchContent_Declare(
+        ggml
+        GIT_REPOSITORY https://github.com/ggerganov/llama.cpp
+        GIT_TAG master
+    )
+    set(GGML_CUDA ON CACHE BOOL "" FORCE)
+    set(CMAKE_CUDA_ARCHITECTURES "90" CACHE STRING "" FORCE)
+    FetchContent_MakeAvailable(ggml)
 endif()
 
 target_link_libraries(benchmarksuite-main
     PUBLIC
         benchmarksuite::benchmarksuite
+        $<$<TARGET_EXISTS:ggml>:ggml>
 )
 
 if(MSVC)

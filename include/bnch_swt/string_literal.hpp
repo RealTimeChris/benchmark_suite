@@ -20,7 +20,7 @@
 	DEALINGS IN THE SOFTWARE.
 */
 /// https://github.com/RealTimeChris/benchmarksuite
-/// Sep 1, 2024
+
 #pragma once
 
 #include <bnch_swt/config.hpp>

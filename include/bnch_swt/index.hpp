@@ -20,7 +20,7 @@
 	DEALINGS IN THE SOFTWARE.
 */
 /// https://github.com/RealTimeChris/benchmarksuite
-/// Dec 6, 2024
+
 #pragma once
 
 #include <bnch_swt/benchmarksuite_gpu_properties.hpp>
@@ -97,7 +97,8 @@ namespace bnch_swt {
 					std::cout << "Metrics for: " << value.name << std::endl;
 					std::cout << std::fixed << std::setprecision(2);
 
-					print_metric("Total Iterations to Stabilize", value.total_iteration_count);
+					print_metric("Total Iterations", value.total_iteration_count);
+					print_metric("Total Iterations to Stabilize", value.iterations_to_stabilize);
 					print_metric("Measured Iterations", value.measured_iteration_count);
 					print_metric(metric_label, value.bytes_processed);
 
@@ -165,8 +166,8 @@ namespace bnch_swt {
 				for (const auto& value: results_new) {
 					std::cout << "Metrics for: " << value.name << std::endl;
 					std::cout << std::fixed << std::setprecision(2);
-
-					print_metric("Total Iterations to Stabilize", value.total_iteration_count);
+					print_metric("Total Iterations", value.total_iteration_count);
+					print_metric("Total Iterations to Stabilize", value.iterations_to_stabilize);
 					print_metric("Measured Iterations", value.measured_iteration_count);
 					print_metric(metric_label, value.bytes_processed);
 
@@ -253,7 +254,7 @@ namespace bnch_swt {
 			static constexpr uint64_t final_measured_iteration_count{ max_execution_count - measured_iteration_count > 0 ? max_execution_count - measured_iteration_count : 1 };
 			for (uint64_t x = 0; x < final_measured_iteration_count; ++x, ++current_global_index) {
 				results_temp   = performance_metrics<benchmark_type>::template collect_metrics<subject_name, use_non_mbps_metric>(new_ptr.subspan(x, measured_iteration_count),
-					  current_global_index);
+					  current_global_index - 1, max_execution_count);
 				lowest_results = results_temp.throughput_percentage_deviation < lowest_results.throughput_percentage_deviation ? results_temp : lowest_results;
 			}
 			get_results_internal()[subject_name.operator std::string_view()] = lowest_results;
