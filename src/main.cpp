@@ -22,30 +22,45 @@
 /// https://github.com/RealTimeChris/benchmarksuite
 #include <bnch_swt/index.hpp>
 
-static constexpr uint64_t total_iterations{ 10 };
+static constexpr uint64_t total_iteration_count{ 10 };
 static constexpr uint64_t measured_iterations{ 10 };
 
+template<typename value_type> struct test_struct_no_pause {
+	BNCH_SWT_HOST static uint64_t impl([[maybe_unused]] value_type& values_01) {
+		[[maybe_unused]] auto start = bnch_swt::clock_type::now();
+		[[maybe_unused]] auto end	= bnch_swt::clock_type::now();
+		while ((end - start).count() < 10000) {
+			end = bnch_swt::clock_type::now();
+		}
+		values_01[0] += values_01[2];
+		bnch_swt::do_not_optimize_away(values_01);
+		return 200000ull;
+	}
+};
+
+template<typename value_type> struct test_struct_pause {
+	BNCH_SWT_HOST static uint64_t impl([[maybe_unused]] value_type& values_01) {
+		[[maybe_unused]] auto start = bnch_swt::clock_type::now();
+		[[maybe_unused]] auto end	= bnch_swt::clock_type::now();
+		while ((end - start).count() < 10000) {
+			end = bnch_swt::clock_type::now();
+		}
+		values_01[0] += values_01[2];
+		bnch_swt::do_not_optimize_away(values_01);
+		return 200000ull;
+	}
+};
+
 int main() {
+	using bench_type = bnch_swt::benchmark_stage<"test_stage", total_iteration_count, measured_iterations, bnch_swt::benchmark_types::cpu, false>;
+	std::vector<double> doubles{};
+	for (uint64_t x = 0; x < 1024; ++x) {
+		doubles.emplace_back(bnch_swt::random_generator<double>::impl());
+	}
 
-	struct test_struct_no_pause {
-		BNCH_SWT_HOST static uint64_t impl() {
-			[[maybe_unused]] auto start = std::chrono::high_resolution_clock::now();
-			[[maybe_unused]] auto end = std::chrono::high_resolution_clock::now();
-			return 200000ull;
-		}
-	};
+	bench_type::run_benchmark<"no-yield-std::string", test_struct_no_pause<std::vector<double>>>(doubles);
+	bench_type::run_benchmark<"yield-std::string", test_struct_pause<std::vector<double>>>(doubles);
 
-	struct test_struct_pause {
-		BNCH_SWT_HOST static uint64_t impl() {
-			[[maybe_unused]] auto start = std::chrono::high_resolution_clock::now();
-			[[maybe_unused]] auto end = std::chrono::high_resolution_clock::now();
-			return 200000ull;
-		}
-	};
-
-	bnch_swt::benchmark_stage<"test_stage", total_iterations, measured_iterations>::run_benchmark<"no-yield", test_struct_no_pause>();
-	bnch_swt::benchmark_stage<"test_stage", total_iterations, measured_iterations>::run_benchmark<"yield", test_struct_pause>();
-
-	bnch_swt::benchmark_stage<"test_stage", total_iterations, measured_iterations>::print_results();
+	bench_type::print_results();
 	return 0;
 }
